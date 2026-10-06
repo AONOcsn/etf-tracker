@@ -1,0 +1,17 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 本地 npm 缓存（这台机器上沙箱不允许写用户级缓存目录，所以缓存放在工作区里）
+.npm-cache/
+
+# 本地缓存与编辑器
+.vite/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
+# 日志
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*

@@ -1,0 +1,521 @@
+/**
+ * 全局样式。
+ *
+ * 手机优先：底部标签栏固定、适配刘海安全区、输入框字号 16px
+ * （iOS Safari 里小于 16px 的输入框获得焦点时会自动放大页面，非常烦人）。
+ */
+
+:root {
+  --bg: #f6f7f4;
+  --card: #ffffff;
+  --line: #e2e5df;
+  --text: #1f2a26;
+  --muted: #6b7a74;
+  --green: #2f6b5b;
+  --green-soft: #e8f1ed;
+  --amber: #b79742;
+  --amber-soft: #fdf6e3;
+  --red: #b3564b;
+  --red-soft: #fbeeec;
+  --radius: 14px;
+  --tabbar-h: 58px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ---------------------------------------------------------------- 布局 */
+
+.app {
+  padding: calc(var(--safe-top) + 8px) 12px calc(var(--tabbar-h) + var(--safe-bottom) + 20px);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+
+.topbar h1 {
+  font-size: 19px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.topbar .sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------- 卡片 */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.card h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card h2 .hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+/* ---------------------------------------------------------------- 数据行 */
+
+.rows {
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row .k {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.row .v {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+}
+
+.row.big .v {
+  font-size: 19px;
+}
+
+.pos {
+  color: var(--green);
+}
+
+.neg {
+  color: var(--red);
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ---------------------------------------------------------------- 表格（卡片式列表） */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--card);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.item .main {
+  min-width: 0;
+  flex: 1;
+}
+
+.item .title {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.item .meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.item .amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.item button.edit {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- 徽标 */
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.badge.warn {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.badge.bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.badge.plain {
+  background: #eef0ec;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  padding: 9px 14px;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+button:active {
+  background: #eef0ec;
+}
+
+button.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+button.primary:active {
+  background: #265647;
+}
+
+button.ghost {
+  background: transparent;
+}
+
+button.danger {
+  color: var(--red);
+  border-color: #e8cfcb;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.btn-row button {
+  flex: 1 1 auto;
+}
+
+/* ---------------------------------------------------------------- 表单 */
+
+.field {
+  margin-bottom: 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.field .sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  /* 小于 16px 时 iOS 会自动放大页面，必须保持 16px */
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 11px;
+  min-height: 44px;
+  appearance: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--green);
+  outline-offset: -1px;
+}
+
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 20px, calc(100% - 12px) 20px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+/* 复选框：iOS 上默认尺寸太小，单独放大到可点区域 */
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+label.check input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- 标签栏 */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  padding-bottom: var(--safe-bottom);
+  z-index: 20;
+}
+
+.tabbar button {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  min-height: var(--tabbar-h);
+  padding: 6px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.tabbar button .ico {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.tabbar button.active {
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- 提示条 */
+
+.banner {
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+}
+
+.banner.err {
+  background: var(--red-soft);
+  color: var(--red);
+  border: 1px solid #e8cfcb;
+}
+
+.banner.ok {
+  background: var(--green-soft);
+  color: var(--green);
+  border: 1px solid #cfe3db;
+}
+
+.banner.info {
+  background: var(--amber-soft);
+  color: #8a6d1f;
+  border: 1px solid #ecdfb8;
+}
+
+/* ---------------------------------------------------------------- 段落与子标题 */
+
+.section-title {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+
+details.doc {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+details.doc summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+details.doc p {
+  font-size: 13px;
+  color: #3c4a45;
+  margin: 9px 0 0;
+}
+
+/* ---------------------------------------------------------------- 弹层 */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 27, 0.42);
+  display: flex;
+  align-items: flex-end;
+  z-index: 40;
+}
+
+.sheet {
+  background: var(--bg);
+  width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
+  border-radius: 16px 16px 0 0;
+  padding: 16px 14px calc(20px + var(--safe-bottom));
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.sheet h2 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+
+.center {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 0;
+}
+
+.spin {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+}
