@@ -119,6 +119,35 @@ export function computeTransfers(records: TransferRecord[]): TransferComputed[] 
   }))
 }
 
+export interface CurrencyTotal {
+  currency: string
+  total: number
+  count: number
+}
+
+/**
+ * 按币种累加金额。
+ *
+ * 用「汇出本金」而不是「实际到账」：一笔在途入金还没有到账金额，
+ * 用本金能立刻反映出去，不会因为 received 为空被静默漏掉。
+ * 不同币种分开累加——港币和美元相加没有意义。
+ * 结果按金额从大到小排，方便一眼看到主要的那一支。
+ */
+export function totalsByCurrency(records: { amount: number; currency: string }[]): CurrencyTotal[] {
+  // 先按原始数字累加，最后再取到分：每一步都 round 会累积误差
+  const byCurrency = new Map<string, CurrencyTotal>()
+  for (const r of records) {
+    const key = (r.currency || '未填币种').toUpperCase()
+    const entry = byCurrency.get(key) ?? { currency: key, total: 0, count: 0 }
+    entry.total += num(r.amount, 0)
+    entry.count += 1
+    byCurrency.set(key, entry)
+  }
+  return [...byCurrency.values()]
+    .map(t => ({ ...t, total: round2(t.total) }))
+    .sort((a, b) => b.total - a.total)
+}
+
 /**
  * 向嘉信渠道实际到账的美元累计（原表「总览」E16 的口径）。
  *

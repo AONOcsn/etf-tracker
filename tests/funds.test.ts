@@ -14,6 +14,7 @@ import {
   receivedUsdTotal,
   transferDifference,
   transferStatus,
+  totalsByCurrency,
   withdrawalStatus
 } from '../src/core/funds.ts'
 import type { BatchRecord, FxRecord, TransferRecord, WithdrawalRecord } from '../src/core/types.ts'
@@ -138,6 +139,60 @@ test('到账 USD 只统计换汇计入金额与直接进嘉信证券的转账，
 test('非 USD 的入金不被计入到账美元', () => {
   const transferRows = computeTransfers([transfer({ id: 't1', currency: 'HKD', amount: 1000, received: 1000 })])
   assert.equal(receivedUsdTotal([], transferRows), 0)
+})
+
+// ---------------------------------------------------------------------------
+// 入金按币种累加（「汇总」卡片）
+// ---------------------------------------------------------------------------
+
+test('入金按币种分别累加，不混加不同币种', () => {
+  const rows = computeTransfers([
+    transfer({ id: 'a', currency: 'USD', amount: 12.73 }),
+    transfer({ id: 'b', currency: 'USD', amount: 1273.18 }),
+    transfer({ id: 'c', currency: 'USD', amount: 1017.89 }),
+    transfer({ id: 'd', currency: 'HKD', amount: 2000 })
+  ])
+  const totals = totalsByCurrency(rows)
+  // 金额大的排前面（USD 2303.8 > HKD 2000）
+  assert.deepEqual(totals[0], { currency: 'USD', total: 2303.8, count: 3 })
+  assert.deepEqual(totals[1], { currency: 'HKD', total: 2000, count: 1 })
+})
+
+test('累加用汇出本金，在途入金也计入（不因未到账而漏掉）', () => {
+  const rows = computeTransfers([
+    transfer({ id: 'a', currency: 'USD', amount: 100, received: 100, receivedDate: '2026-01-01' }),
+    // 在途：还没到账
+    transfer({ id: 'b', currency: 'USD', amount: 250, received: undefined, receivedDate: undefined })
+  ])
+  const totals = totalsByCurrency(rows)
+  assert.equal(totals.length, 1)
+  assert.equal(totals[0].total, 350) // 100 + 250，两笔本金都算进去
+  assert.equal(totals[0].count, 2)
+})
+
+test('没有入金时返回空列表，界面显示提示而不是 0.00', () => {
+  assert.deepEqual(totalsByCurrency([]), [])
+})
+
+test('币种大小写统一，未填币种归到「未填币种」', () => {
+  const rows = computeTransfers([
+    transfer({ id: 'a', currency: 'usd', amount: 100 }),
+    transfer({ id: 'b', currency: 'USD', amount: 50 }),
+    transfer({ id: 'c', currency: '', amount: 20 })
+  ])
+  const totals = totalsByCurrency(rows)
+  const usd = totals.find(t => t.currency === 'USD')
+  assert.equal(usd?.total, 150)
+  assert.equal(usd?.count, 2)
+  assert.ok(totals.some(t => t.currency === '未填币种'))
+})
+
+test('累加结果取到分，不出现浮点尾数', () => {
+  const rows = computeTransfers([
+    transfer({ id: 'a', currency: 'USD', amount: 0.1 }),
+    transfer({ id: 'b', currency: 'USD', amount: 0.2 })
+  ])
+  assert.equal(totalsByCurrency(rows)[0].total, 0.3)
 })
 
 // ---------------------------------------------------------------------------

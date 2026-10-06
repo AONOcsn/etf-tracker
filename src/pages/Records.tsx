@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Card, DateInput, Empty, Field, NumberInput, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
+import { Card, DateInput, Empty, Field, NumberInput, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
 import type { AppData, FxRecord, TransferRecord, WithdrawalRecord } from '../core/types.ts'
 import { num, today, uid } from '../core/types.ts'
 import { accountsOf, currenciesOf } from '../core/empty.ts'
-import { computeFx, computeTransfers, computeWithdrawals, receivedUsdTotal } from '../core/funds.ts'
+import { computeFx, computeTransfers, computeWithdrawals, receivedUsdTotal, totalsByCurrency } from '../core/funds.ts'
 
 type Tab = '换汇' | '入金' | '出金'
 const TABS: Tab[] = ['换汇', '入金', '出金']
@@ -65,6 +65,8 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
   const shared = { accounts, currencies }
   // 出金：对外汇出，按日期倒序展示
   const withdrawalRows = [...withdrawals].reverse()
+  // 入金按币种累加，给「汇总」卡片用
+  const transferTotals = useMemo(() => totalsByCurrency(transfers), [transfers])
 
   return (
     <>
@@ -113,12 +115,6 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
               ))}
             </div>
           )}
-          <Card title="汇总">
-            <div className="row">
-              <span className="k">计入嘉信入金 USD</span>
-              <span className="v">{fmt(receivedUsdTotal(fx, transfers))}</span>
-            </div>
-          </Card>
           <div className="btn-row">
             <button className="primary" onClick={() => setEditingFx(emptyFx())}>
               ＋ 记一笔换汇
@@ -168,6 +164,29 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
               ))}
             </div>
           )}
+          <Card title="汇总" hint="按币种累加">
+            {transferTotals.length === 0 ? (
+              <p className="note" style={{ marginTop: 0 }}>
+                还没有可累加的入金。填了金额之后，这里按币种分别累计。
+              </p>
+            ) : (
+              transferTotals.map(t => (
+                <Row
+                  key={t.currency}
+                  label={`累计入金 ${t.currency}`}
+                  value={fmt(t.total)}
+                  big={transferTotals.length === 1}
+                />
+              ))
+            )}
+            <Row label="计入嘉信入金 USD" value={fmt(receivedUsdTotal(fx, transfers))} />
+            <p className="note">
+              「累计入金」按币种分别累加每笔的汇出本金（<strong>不含另付费用</strong>）——不同币种不能直接加总，
+              所以分开列。另付费用单独记在每一笔上，要统计费用把各笔的「另付」相加即可。
+              「计入嘉信入金 USD」只算真正进嘉信证券账户的美元到账：换汇里收币为 USD、收币账户是嘉信证券／嘉信入金中转的
+              实际到账，加上入金里到账账户为嘉信证券的 USD 转账。中转步骤不重复加总，出金也不算在内。
+            </p>
+          </Card>
           <div className="btn-row">
             <button className="primary" onClick={() => setEditingTransfer(emptyTransfer())}>
               ＋ 记一笔入金
