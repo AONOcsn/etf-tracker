@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, Empty, Field, NumberInput, Row, StatusBadge } from '../components/ui.tsx'
+import { MarketLine } from '../components/MarketClock.tsx'
 import type { AppData } from '../core/types.ts'
 import { today } from '../core/types.ts'
 import { computeHoldings } from '../core/holdings.ts'
@@ -13,7 +14,15 @@ import { computeDividends, computeFx, computeTransfers, netDividendsTotal, recei
  * 数据来自其它表的实时重算，所以任何一处录入都会立刻反映到这里，
  * 不像 Excel 需要手动重算。
  */
-export function OverviewPage({ data, update }: { data: AppData; update: (fn: (d: AppData) => AppData) => void }) {
+export function OverviewPage({
+  data,
+  update,
+  onGoToPlan
+}: {
+  data: AppData
+  update: (fn: (d: AppData) => AppData) => void
+  onGoToPlan?: () => void
+}) {
   const [editingPrice, setEditingPrice] = useState<string | undefined>(undefined)
 
   const holdings = useMemo(() => computeHoldings(data.trades), [data.trades])
@@ -72,6 +81,7 @@ export function OverviewPage({ data, update }: { data: AppData; update: (fn: (d:
       )}
 
       <Card title="账户总值" hint="市值 ＋ 现金">
+        <MarketLine onOpen={onGoToPlan} />
         <Row label="ETF 市值" value={fmt(overview.totals.marketValue)} big />
         <Row label="现金 USD" value={fmt(cash)} />
         <Row label="总值 USD" value={fmt(overview.totalValue)} big />

@@ -135,7 +135,9 @@ export default function App() {
         </div>
       </header>
 
-      {tab === 'overview' && <OverviewPage data={app.data} update={app.update} />}
+      {tab === 'overview' && (
+        <OverviewPage data={app.data} update={app.update} onGoToPlan={() => setTab('plan')} />
+      )}
       {tab === 'plan' && <PlanPage data={app.data} update={app.update} />}
       {tab === 'trades' && <TradesPage data={app.data} update={app.update} />}
       {tab === 'records' && <RecordsPage data={app.data} update={app.update} />}

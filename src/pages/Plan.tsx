@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, Empty, Field, NumberInput, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
+import { MarketClock } from '../components/MarketClock.tsx'
 import type { AppData, PlanMonth } from '../core/types.ts'
 import { currentPeriod, today } from '../core/types.ts'
 import { computeDrawdown, visiblePlanRows } from '../core/drawdown.ts'
@@ -99,6 +100,8 @@ export function PlanPage({ data, update }: { data: AppData; update: (fn: (d: App
           </div>
         )}
       </Card>
+
+      <MarketClock />
 
       {current && (
         <Card title="本月计划" hint={current.period}>
