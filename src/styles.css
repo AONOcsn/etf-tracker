@@ -288,6 +288,60 @@ button:disabled {
   flex: 1 1 auto;
 }
 
+/* --------------------------------------------------- 记录页顶部的常驻操作栏 */
+
+/**
+ * 记录页的「记一笔」操作栏。
+ *
+ * 记录一多，把按钮放在列表末尾就要滑很久才能到，所以固定在页面顶部。
+ * 用 sticky 而不是 fixed：sticky 仍然占据文档流里的位置，不会盖住下面的内容，
+ * 也不需要给容器补 padding。
+ *
+ * 背景必须是不透明的：sticky 元素滚动时下方内容会从其背后穿过。
+ * z-index 取 15，低于底部标签栏（20）和弹层（40）。
+ */
+.page-bar {
+  position: sticky;
+  /* 顶部安全区（刘海）要留出来，否则会藏到状态栏后面 */
+  top: calc(var(--safe-top) + 4px);
+  z-index: 15;
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  /* 上下各留一点阴影，滚动时能看出它是浮在内容之上的 */
+  box-shadow: 0 2px 10px rgba(31, 42, 38, 0.06);
+}
+
+.page-bar .count {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 2px 6px;
+}
+
+.page-bar .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.page-bar .actions button {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+/* 子标签（换汇／入金／出金）在操作栏内不再需要额外的下间距 */
+.page-bar .sub-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.page-bar .sub-tabs button {
+  flex: 1 1 auto;
+  min-height: 38px;
+}
+
 /* ---------------------------------------------------------------- 表单 */
 
 .field {

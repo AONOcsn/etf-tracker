@@ -189,6 +189,34 @@ export function Empty({ text }: { text: string }) {
   return <div className="center">{text}</div>
 }
 
+/**
+ * 记录页顶部的常驻操作栏。
+ *
+ * 记录多了之后，把「记一笔」放在列表末尾要滑很久才能点到，所以固定在顶部。
+ * 用 sticky（样式见 styles.css 的 .page-bar）而不是 fixed，避免遮挡内容。
+ *
+ * @param count   记录条数文案，放在按钮上方一行
+ * @param actions 操作按钮，通常是「＋ 记一笔 XXX」
+ * @param below   操作栏内、按钮下方的附加内容（资金页的三个子标签）
+ */
+export function PageBar({
+  count,
+  actions,
+  below
+}: {
+  count?: ReactNode
+  actions: ReactNode
+  below?: ReactNode
+}) {
+  return (
+    <div className="page-bar">
+      {count !== undefined && <div className="count">{count}</div>}
+      <div className="actions">{actions}</div>
+      {below}
+    </div>
+  )
+}
+
 export const SIDE_OPTIONS: readonly Side[] = ['buy', 'sell']
 export const PURPOSE_OPTIONS: readonly Purpose[] = ['定投', '分红再投', '其他']
 

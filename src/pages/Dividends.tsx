@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, DateInput, Empty, Field, NumberInput, Sheet, TextInput } from '../components/ui.tsx'
+import { Card, DateInput, Empty, Field, NumberInput, PageBar, Sheet, TextInput } from '../components/ui.tsx'
 import type { AppData, DividendRecord } from '../core/types.ts'
 import { num, today, uid } from '../core/types.ts'
 import { computeDividends, netDividendsTotal } from '../core/funds.ts'
@@ -22,6 +22,16 @@ export function DividendsPage({ data, update }: { data: AppData; update: (fn: (d
 
   return (
     <>
+      {/* 常驻顶部：记录一多就不用滑到列表末尾去找按钮 */}
+      <PageBar
+        count={`共 ${rows.length} 笔分红 · 税后合计 ${fmt(netDividendsTotal(rows))} USD`}
+        actions={
+          <button className="primary" onClick={() => setEditing(blank())}>
+            ＋ 记一笔分红
+          </button>
+        }
+      />
+
       <Card title="分红记录" hint={`${rows.length} 笔`}>
         <p className="note" style={{ marginTop: 0 }}>
           每次分红一行。税前、预扣税、其他费用按券商流水填写，税后自动计算。
@@ -59,12 +69,6 @@ export function DividendsPage({ data, update }: { data: AppData; update: (fn: (d
           <span className="v">{fmt(netDividendsTotal(rows))}</span>
         </div>
       </Card>
-
-      <div className="btn-row">
-        <button className="primary" onClick={() => setEditing(blank())}>
-          ＋ 记一笔分红
-        </button>
-      </div>
 
       {editing && (
         <Sheet title="分红" onClose={() => setEditing(undefined)}>

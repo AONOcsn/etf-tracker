@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, DateInput, Empty, Field, NumberInput, PURPOSE_OPTIONS, Select, Sheet, StatusBadge, TextInput, sideText } from '../components/ui.tsx'
+import { Card, DateInput, Empty, Field, NumberInput, PageBar, PURPOSE_OPTIONS, Select, Sheet, StatusBadge, TextInput, sideText } from '../components/ui.tsx'
 import type { AppData, Purpose, Side, Trade } from '../core/types.ts'
 import { num, today, uid } from '../core/types.ts'
 import { computeHoldings, holdingOf, tradeStatus } from '../core/holdings.ts'
@@ -49,19 +49,19 @@ export function TradesPage({ data, update }: { data: AppData; update: (fn: (d: A
 
   return (
     <>
-      <Card
-        title="交易记录"
-        hint={`${data.trades.length} 笔`}
-        footer={
-          <div className="btn-row">
-            <button className="primary" onClick={() => setEditing(newTrade())}>
-              ＋ 记一笔成交
-            </button>
-          </div>
+      {/* 常驻顶部：记录一多就不用滑到列表末尾去找按钮 */}
+      <PageBar
+        count={`共 ${data.trades.length} 笔成交`}
+        actions={
+          <button className="primary" onClick={() => setEditing(newTrade())}>
+            ＋ 记一笔成交
+          </button>
         }
-      >
+      />
+
+      <Card title="交易记录" hint={`${data.trades.length} 笔`}>
         {result.trades.length === 0 ? (
-          <Empty text="还没有成交记录。点下面的按钮记第一笔。" />
+          <Empty text="还没有成交记录。点上面的按钮记第一笔。" />
         ) : (
           <div className="list">
             {[...result.trades].reverse().map(t => (

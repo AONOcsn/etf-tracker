@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Card, DateInput, Empty, Field, NumberInput, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
+import { Card, DateInput, Empty, Field, NumberInput, PageBar, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
 import type { AppData, FxRecord, TransferRecord, WithdrawalRecord } from '../core/types.ts'
 import { num, today, uid } from '../core/types.ts'
 import { accountsOf, currenciesOf } from '../core/empty.ts'
@@ -68,15 +68,33 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
   // 入金按币种累加，给「汇总」卡片用
   const transferTotals = useMemo(() => totalsByCurrency(transfers), [transfers])
 
+  /** 当前子页对应的「记一笔」动作与条数文案。 */
+  const bar = {
+    换汇: { count: `共 ${fx.length} 笔换汇`, label: '＋ 记一笔换汇', act: () => setEditingFx(emptyFx()) },
+    入金: { count: `共 ${transfers.length} 笔入金`, label: '＋ 记一笔入金', act: () => setEditingTransfer(emptyTransfer()) },
+    出金: { count: `共 ${withdrawals.length} 笔出金`, label: '＋ 记一笔出金', act: () => setEditingWithdrawal(emptyWithdrawal()) }
+  }[tab]
+
   return (
     <>
-      <div className="btn-row" style={{ marginTop: 0, marginBottom: 12 }}>
-        {TABS.map(t => (
-          <button key={t} className={tab === t ? 'primary' : ''} onClick={() => setTab(t)}>
-            {t}
+      {/* 常驻顶部：记录一多就不用滑到列表末尾去找按钮；子标签也一并固定，切换方便 */}
+      <PageBar
+        count={bar.count}
+        actions={
+          <button className="primary" onClick={bar.act}>
+            {bar.label}
           </button>
-        ))}
-      </div>
+        }
+        below={
+          <div className="sub-tabs">
+            {TABS.map(t => (
+              <button key={t} className={tab === t ? 'primary' : ''} onClick={() => setTab(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {tab === '换汇' && (
         <>
@@ -115,11 +133,6 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
               ))}
             </div>
           )}
-          <div className="btn-row">
-            <button className="primary" onClick={() => setEditingFx(emptyFx())}>
-              ＋ 记一笔换汇
-            </button>
-          </div>
         </>
       )}
 
@@ -187,11 +200,6 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
               实际到账，加上入金里到账账户为嘉信证券的 USD 转账。中转步骤不重复加总，出金也不算在内。
             </p>
           </Card>
-          <div className="btn-row">
-            <button className="primary" onClick={() => setEditingTransfer(emptyTransfer())}>
-              ＋ 记一笔入金
-            </button>
-          </div>
         </>
       )}
 
@@ -237,11 +245,6 @@ export function RecordsPage({ data, update }: { data: AppData; update: (fn: (d: 
               ))}
             </div>
           )}
-          <div className="btn-row">
-            <button className="primary" onClick={() => setEditingWithdrawal(emptyWithdrawal())}>
-              ＋ 记一笔出金
-            </button>
-          </div>
         </>
       )}
 
