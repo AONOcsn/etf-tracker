@@ -186,6 +186,28 @@ test('预算用尽后档位总额退回基础额，且不因反弹回补', () =>
   assert.equal(r.rows[1].status, '预算用完：基础定投')
 })
 
+test('高档回撤但预算已耗尽时，月合计与 ETF 分配退回基础额', () => {
+  const result = computeDrawdown({
+    months: [{ period: '2026-10', observedDate: '2026-10-09', spClose: 7000 }],
+    settings: { ...DEFAULT_SETTINGS, startingPeak: 10000, extraBudgetTotal: 0 },
+    trades: []
+  })
+  assert.equal(result.rows[0].monthTotal, 500)
+  assert.equal(result.rows[0].vooPlan, 450)
+  assert.equal(result.rows[0].qqqmPlan, 50)
+})
+
+test('高档回撤但额外预算仅余 100 时，月合计不能超过 600', () => {
+  const result = computeDrawdown({
+    months: [{ period: '2026-10', observedDate: '2026-10-09', spClose: 7000 }],
+    settings: { ...DEFAULT_SETTINGS, startingPeak: 10000, extraBudgetTotal: 100 },
+    trades: []
+  })
+  assert.equal(result.rows[0].plannedExtra, 100)
+  assert.equal(result.rows[0].monthTotal, 600)
+  assert.equal(result.rows[0].vooPlan + result.rows[0].qqqmPlan, 600)
+})
+
 test('月中余款不足时计划额外只取余款', () => {
   const trades: Trade[] = [
     { id: 't1', date: '2026-01-15', symbol: 'VOO', side: 'buy', amount: 4700, fee: 0, shares: 1 }
@@ -261,12 +283,12 @@ function planTable(filled: Record<string, Partial<PlanMonth>> = {}) {
   return { months, rows: result.rows }
 }
 
-test('空白账本只列出当前月及之后两个月，不铺 120 行', () => {
+test('空白账本只列当前月，不预先展示未来空月份', () => {
   const { months, rows } = planTable()
   const visible = visiblePlanRows(months, rows, NOW)
   assert.equal(visible.length, FORWARD_MONTHS + 1)
   // 倒序：当前月在最上面
-  assert.deepEqual(visible.map(r => r.period), ['2026-12', '2026-11', '2026-10'])
+  assert.deepEqual(visible.map(r => r.period), ['2026-10'])
 })
 
 test('填过行情的月份会被列出来，即使远在过去或未来', () => {
@@ -280,8 +302,8 @@ test('填过行情的月份会被列出来，即使远在过去或未来', () =>
   assert.ok(periods.includes('2027-06'))
   // 当前月窗口仍然保留
   assert.ok(periods.includes('2026-10'))
-  assert.ok(periods.includes('2026-11'))
-  assert.ok(periods.includes('2026-12'))
+  assert.ok(!periods.includes('2026-11'))
+  assert.ok(!periods.includes('2026-12'))
   // 完全空的月份不出现
   assert.ok(!periods.includes('2026-05'))
   assert.ok(!periods.includes('2030-01'))
@@ -322,5 +344,5 @@ test('月份列表按时间倒序，最近的排最上面', () => {
   const visible = visiblePlanRows(months, rows, NOW)
   const periods = visible.map(r => r.period)
   // 倒序：2026-12 在前，2026-01 在最后
-  assert.deepEqual(periods, ['2026-12', '2026-11', '2026-10', '2026-03', '2026-02', '2026-01'])
+  assert.deepEqual(periods, ['2026-10', '2026-03', '2026-02', '2026-01'])
 })

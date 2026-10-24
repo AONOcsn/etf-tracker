@@ -28,15 +28,14 @@ export const DEFAULT_CURRENCIES: string[] = ['RMB', 'HKD', 'USD']
 
 export const PURPOSES: Purpose[] = ['定投', '分红再投', '其他']
 
-/** 原表预留的录入上限，超出时给提示（对应「使用说明」第 41 条）。 */
-export const CAPACITY = { trades: 600, fx: 240, transfers: 240, dividends: 240, months: 120 } as const
-
 export interface EtfSetting {
   symbol: string
   /** 目标比例，VOO 0.9 / QQQM 0.1。SMH 为历史持仓填 0。 */
   targetRatio: number
   /** 是否纳入新投入的计划分配。SMH 为 false。 */
   planned: boolean
+  /** 本月新投入分配，与持仓目标占比独立。 */
+  investRatio?: number
   /** 手填现价，对应原表 D 列。 */
   price: number
   /** 价格日期，对应原表 E 列。 */
@@ -205,6 +204,8 @@ export interface Settings {
   accounts?: string[]
   /** 可选币种清单，用户可增删。留空时回落到 DEFAULT_CURRENCIES。 */
   currencies?: string[]
+  cashUsd?: number
+  cashCheckedAt?: string
   lastQuoteAt?: string
   lastQuoteSource?: string
 }

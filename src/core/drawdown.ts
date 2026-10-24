@@ -1,4 +1,5 @@
-import type { PlanMonth, Settings, Trade } from './types.ts'
+import type { EtfSetting, PlanMonth, Settings, Trade } from './types.ts'
+import { computeHoldings } from './holdings.ts'
 import { monthOf, nextPeriod, num, plannedDate, today } from './types.ts'
 
 /**
@@ -87,6 +88,7 @@ export function tierAmount(base: number, drawdown: number | undefined): number |
  */
 export function computeDrawdown(params: {
   months: PlanMonth[]
+  etfs?: EtfSetting[]
   settings: Settings
   trades: Trade[]
   /** 仅在看涨方向计入的只读回调，便于测试注入「今天」。 */
@@ -99,12 +101,13 @@ export function computeDrawdown(params: {
   const rebalance = num(settings.rebalance, 0.1)
 
   // 目标比例：VOO = 1 − rebalance，QQQM = rebalance（与原表 90%/10% 一致）。
-  const vooRatio = 1 - rebalance
-  const qqqmRatio = rebalance
+  const vooRatio = params.etfs?.find(e => e.symbol === 'VOO' && e.planned)?.investRatio ?? (params.etfs ? 0 : 1 - rebalance)
+  const qqqmRatio = params.etfs?.find(e => e.symbol === 'QQQM' && e.planned)?.investRatio ?? (params.etfs ? 0 : rebalance)
+  const plannedSymbols = new Set(params.etfs ? params.etfs.filter(e => e.planned).map(e => e.symbol) : ['VOO', 'QQQM'])
 
   // 按月份归档交易，避免每个月都重扫全表
   const byMonth = new Map<string, Trade[]>()
-  for (const t of trades) {
+  for (const t of computeHoldings(trades).trades.filter(t => t.status === '已记录')) {
     const m = monthOf(t.date)
     if (!m) continue
     const list = byMonth.get(m)
@@ -136,16 +139,15 @@ export function computeDrawdown(params: {
     const budgetAtStart = Math.max(0, budgetTotal - usedCumulative)
     // 档位总额就是本月合计；没有行情时先列基础额
     // （与原表「待补指数收盘／历史基准；先列基础额」的行为一致）。
-    const monthTotal = tier === undefined ? base : tier
-    // 计划额外 = 本月合计 − 基础额，再被剩余预算封顶。
-    // 注意不能写成「base + plannedExtra」：那样等于把基础额算两遍。
-    const plannedExtra = Math.min(Math.max(0, monthTotal - base), budgetAtStart)
+    const plannedExtra = Math.min(Math.max(0, (tier ?? base) - base), budgetAtStart)
+    // 档位是标准额度；实际计划只能使用尚未消耗的额外预算。
+    const monthTotal = base + plannedExtra
 
     const monthTrades = byMonth.get(month.period) ?? []
     const actualInvested = monthTrades
       .filter(t =>
         t.side === 'buy' &&
-        (t.symbol === 'VOO' || t.symbol === 'QQQM') &&
+        plannedSymbols.has(t.symbol) &&
         // 空白视作定投；只有明确标了「分红再投」「其他」才排除。
         t.purpose !== '分红再投' &&
         t.purpose !== '其他'
@@ -226,7 +228,7 @@ export function currentPlanRow(rows: PlanRow[], now = today()): PlanRow | undefi
 }
 
 /** 计划页列表里，当前月之后额外保留的月份数。 */
-export const FORWARD_MONTHS = 2
+export const FORWARD_MONTHS = 0
 
 /**
  * 挑选计划页要显示的月份。

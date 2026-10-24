@@ -1,217 +1,123 @@
 import { useMemo, useState } from 'react'
-import { Card, Empty, Field, NumberInput, Row, StatusBadge } from '../components/ui.tsx'
+import { Card, Empty, Field, NumberInput, Row, Sheet, StatusBadge } from '../components/ui.tsx'
 import { MarketLine } from '../components/MarketClock.tsx'
 import type { AppData } from '../core/types.ts'
 import { today } from '../core/types.ts'
 import { computeHoldings } from '../core/holdings.ts'
 import { computeOverview } from '../core/overview.ts'
-import { computeDrawdown } from '../core/drawdown.ts'
+import { planning } from '../core/planning.ts'
+import { ledgerRows } from '../core/ledger.ts'
+import type { LedgerRow } from '../core/ledger.ts'
 import { computeDividends, computeFx, computeTransfers, netDividendsTotal, receivedUsdTotal } from '../core/funds.ts'
 
-/**
- * 总览页：等价于原表「总览」工作表。
- *
- * 数据来自其它表的实时重算，所以任何一处录入都会立刻反映到这里，
- * 不像 Excel 需要手动重算。
- */
-export function OverviewPage({
-  data,
-  update,
-  onGoToPlan
-}: {
+export function OverviewPage({ data, update, onGoToPlan, onGoToTrades, refreshQuotes, quoting, onOpenRecord }: {
   data: AppData
   update: (fn: (d: AppData) => AppData) => void
-  onGoToPlan?: () => void
+  onGoToPlan: () => void
+  onGoToTrades: () => void
+  refreshQuotes: () => Promise<void>
+  quoting: boolean
+  onOpenRecord: (row: LedgerRow) => void
 }) {
-  const [editingPrice, setEditingPrice] = useState<string | undefined>(undefined)
-
+  const [editingPrice, setEditingPrice] = useState<string>()
+  const [editingCash, setEditingCash] = useState(false)
+  const [cashInput, setCashInput] = useState<number>()
   const holdings = useMemo(() => computeHoldings(data.trades), [data.trades])
   const fx = useMemo(() => computeFx(data.fxRecords), [data.fxRecords])
   const transfers = useMemo(() => computeTransfers(data.transfers), [data.transfers])
   const dividends = useMemo(() => computeDividends(data.dividends), [data.dividends])
-  const drawdown = useMemo(
-    () => computeDrawdown({ months: data.planMonths, settings: data.settings, trades: data.trades }),
-    [data.planMonths, data.settings, data.trades]
-  )
+  const { drawdown, execution: current } = useMemo(() => planning(data), [data])
+  const cash = data.settings.cashUsd ?? 0
+  const pending = useMemo(() => ledgerRows(data).filter(r => r.status && !['已记录', '已计算', '已完整划转'].includes(r.status)), [data])
+  const overview = useMemo(() => computeOverview({
+    etfs: data.etfs, holdings, baseMonthly: data.settings.baseMonthly, cash,
+    extraUsed: drawdown.usedTotal, extraTotal: data.settings.extraBudgetTotal,
+    receivedUsd: receivedUsdTotal(fx, transfers), netDividends: netDividendsTotal(dividends)
+  }), [data.etfs, holdings, data.settings, cash, drawdown.usedTotal, fx, transfers, dividends])
+  const fmt = (n: number | undefined) => n === undefined ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const pct = (n: number | undefined) => n === undefined ? '—' : `${(n * 100).toFixed(2)}%`
+  const signedPct = (n: number | undefined) => n === undefined ? '—' : `${n >= 0 ? '+' : ''}${pct(n)}`
+  const signed = (n: number | undefined) => n === undefined ? '—' : `${n >= 0 ? '+' : ''}${fmt(n)}`
+  const tone = (n: number | undefined) => n === undefined ? undefined : n >= 0 ? 'pos' as const : 'neg' as const
+  const missing = overview.rows.filter(r => r.shares > 0 && r.marketValue === undefined)
 
-  const overview = useMemo(
-    () =>
-      computeOverview({
-        etfs: data.etfs,
-        holdings,
-        baseMonthly: data.settings.baseMonthly,
-        cash: data.etfs.reduce((s, e) => s + (e.cash ?? 0), 0),
-        extraUsed: drawdown.usedTotal,
-        extraTotal: data.settings.extraBudgetTotal,
-        receivedUsd: receivedUsdTotal(fx, transfers),
-        netDividends: netDividendsTotal(dividends)
-      }),
-    [data.etfs, data.settings, holdings, drawdown.usedTotal, fx, transfers, dividends]
-  )
-
-  const cash = data.etfs.reduce((s, e) => s + (e.cash ?? 0), 0)
-  const noHoldings = data.trades.length === 0
-
-  function setPrice(symbol: string, price: number | undefined, date: string | undefined) {
-    update(current => ({
-      ...current,
-      etfs: current.etfs.map(e => (e.symbol === symbol ? { ...e, price: price ?? 0, priceDate: date } : e))
-    }))
-  }
-
-  function setCash(value: number | undefined) {
-    // 现金统一记在第一个 ETF 行上，避免引入一个新的「账户」概念
-    const first = data.etfs[0]?.symbol
-    if (!first) return
-    update(current => ({
-      ...current,
-      etfs: current.etfs.map(e => (e.symbol === first ? { ...e, cash: value ?? 0 } : { ...e, cash: e.cash ?? 0 }))
-    }))
-  }
-
-  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const pct = (n: number) => `${(n * 100).toFixed(2)}%`
-
-  return (
-    <>
-      {noHoldings && (
-        <div className="banner info">
-          这是空白账本。先到「设置」确认基础月投、额外预算与目标比例，然后去「交易」记第一笔买入；总览会自动算出一切。
-        </div>
-      )}
-
-      <Card title="账户总值" hint="市值 ＋ 现金">
-        <MarketLine onOpen={onGoToPlan} />
-        <Row label="ETF 市值" value={fmt(overview.totals.marketValue)} big />
-        <Row label="现金 USD" value={fmt(cash)} />
-        <Row label="总值 USD" value={fmt(overview.totalValue)} big />
-        <Field label="现金（按嘉信实际余额填写）">
-          <NumberInput value={cash || undefined} onChange={setCash} placeholder="0.00" />
-        </Field>
-      </Card>
-
-      <Card title="持仓" hint="移动加权平均成本">
-        {overview.rows.length === 0 ? (
-          <Empty text="还没有 ETF，去设置里加一只" />
-        ) : (
-          <div className="list">
-            {overview.rows.map(row => (
-              <div className="item" key={row.symbol}>
-                <div className="main">
-                  <div className="title">
-                    {row.symbol}
-                    <StatusBadge status={row.status} />
-                  </div>
-                  <div className="meta">
-                    份额 {row.shares.toLocaleString('en-US', { maximumFractionDigits: 6 })} · 均价{' '}
-                    {row.avgCost ? fmt(row.avgCost) : '—'} · 现价 {row.price ? fmt(row.price) : '—'}
-                    {row.priceDate ? `（${row.priceDate}）` : ''}
-                  </div>
-                  <div className="meta">
-                    成本 {fmt(row.cost)} · 目标 {pct(row.targetRatio)} · 占比 {pct(row.weight)} · 偏离{' '}
-                    {row.deviation >= 0 ? '+' : ''}
-                    {pct(row.deviation)}
-                  </div>
-                  <div className="meta">
-                    <button className="ghost" style={{ minHeight: 28, padding: '2px 8px', fontSize: 12 }} onClick={() => setEditingPrice(row.symbol)}>
-                      改现价
-                    </button>
-                  </div>
-                </div>
-                <div className="amount">
-                  <div>{fmt(row.marketValue)}</div>
-                  <div className={row.unrealized >= 0 ? 'pos' : 'neg'} style={{ fontSize: 13 }}>
-                    {row.unrealized >= 0 ? '+' : ''}
-                    {fmt(row.unrealized)}
-                  </div>
-                  <div className={row.returnRate >= 0 ? 'pos' : 'neg'} style={{ fontSize: 12 }}>
-                    {row.cost ? pct(row.returnRate) : '—'}
-                  </div>
-                </div>
-              </div>
-            ))}
+  return <>
+    {data.trades.length === 0 && <div className="banner info">欢迎使用。先在「设置」确认投资参数，再记下第一笔成交。</div>}
+    <Card title="券商资产" hint={missing.length ? '估值不完整' : 'USD'}>
+      <div className="asset-value">{fmt(overview.totalValue)}</div>
+      {missing.length > 0 && <div className="banner info">{missing.map(r => r.symbol).join('、')} 缺少价格，补齐后显示账户总值与盈亏。</div>}
+      <Row label="持仓盈亏" value={`${signed(overview.totals.unrealized)} USD`} tone={tone(overview.totals.unrealized)} />
+      <Row label="持仓收益率" value={overview.totals.cost ? signedPct(overview.totals.returnRate) : '—'} tone={tone(overview.totals.returnRate)} />
+      <Row label="ETF 市值 / 现金" value={`${fmt(overview.totals.marketValue)} / ${fmt(cash)}`} />
+      <div className="btn-row">
+        <button onClick={() => void refreshQuotes()} disabled={quoting}>{quoting ? '正在更新…' : '更新行情'}</button>
+        <button onClick={() => { setCashInput(cash); setEditingCash(true) }}>核对现金</button>
+      </div>
+      <p className="note">估值采用各持仓显示的价格日期；收益率为未实现盈亏 ÷ 持仓成本。</p>
+    </Card>
+    {current && <Card title="本月执行" hint={current.period}>
+      <Row label="本月计划 USD" value={fmt(current.plannedTotal)} big />
+      <Row label="已记录定投 USD" value={fmt(current.actualTotal)} />
+      <Row label="还差 USD" value={fmt(Math.max(0, current.plannedTotal - current.actualTotal))} />
+      <div className="btn-row"><button onClick={onGoToPlan}>查看计划</button><button className="primary" onClick={onGoToTrades}>记一笔成交</button></div>
+      <p className="note">以已记录成交核对执行情况；请先在计划页确认观察行情。</p>
+    </Card>}
+    {pending.length > 0 && <Card title="待办与在途" hint={`${pending.length} 笔`}><div className="pending-list">{pending.slice(0, 3).map(r => <button key={`${r.kind}:${r.id}`} className="setting-link" onClick={() => onOpenRecord(r)}><span><strong>{r.title}</strong><small>{r.status}</small></span><span>查看 ›</span></button>)}</div></Card>}
+    <MarketLine onOpen={onGoToPlan} />
+    <Card title="持仓" >
+      {overview.rows.filter(r => r.shares > 0).length === 0 ? <Empty text="还没有持仓" /> : <div className="list">
+        {overview.rows.filter(r => r.shares > 0).map(row => <div className="item" key={row.symbol}>
+          <div className="main">
+            <div className="title">{row.symbol}<StatusBadge status={row.status} /></div>
+            <div className="meta">{row.shares.toLocaleString('en-US', { maximumFractionDigits: 6 })} 份 · 现价 {row.price ? fmt(row.price) : '待补'}</div>
+            <div className="meta">价格日期 {row.priceDate ?? '未填写'}</div>
+            <details className="holding-details"><summary>成本与配置</summary>
+              <div className="meta">成本 {fmt(row.cost)} · 均价 {row.avgCost ? fmt(row.avgCost) : '—'}</div>
+              <div className="meta">目标 {pct(row.targetRatio)} · 占比 {pct(row.weight)} · 偏离 {signedPct(row.deviation)}</div>
+            </details>
+            <button className="ghost" onClick={() => setEditingPrice(row.symbol)}>修改价格</button>
           </div>
-        )}
-      </Card>
-
-      <Card title="合计">
-        <Row label="持仓成本" value={fmt(overview.totals.cost)} />
-        <Row label="市值" value={fmt(overview.totals.marketValue)} />
-        <Row
-          label="未实现盈亏"
-          value={`${overview.totals.unrealized >= 0 ? '+' : ''}${fmt(overview.totals.unrealized)}`}
-          tone={overview.totals.unrealized >= 0 ? 'pos' : 'neg'}
-        />
-        <Row label="持仓收益率" value={overview.totals.cost ? pct(overview.totals.returnRate) : '—'} />
-        <p className="note">持仓收益率为未实现盈亏 ÷ 当前持仓成本，不是年化收益率。</p>
-      </Card>
-
-      <Card title="累计">
-        <Row label="累计买入 USD" value={fmt(overview.totalBought)} />
-        <Row label="到账 USD（嘉信渠道）" value={fmt(overview.receivedUsd)} />
-        <Row label="税后分红 USD" value={fmt(overview.netDividends)} />
-        <Row label="已实现盈亏 USD" value={fmt(overview.realized)} tone={overview.realized >= 0 ? 'pos' : 'neg'} />
-        <p className="note">
-          到账只累计真正进入嘉信渠道的美元：收币为 USD 且收款账户是嘉信证券／嘉信入金中转的换汇，加上到账账户为嘉信证券的
-          USD 转账。中转步骤不重复加总。
-        </p>
-      </Card>
-
-      <Card title="额外预算" hint="回撤计划">
-        <Row label="预算总额 USD" value={fmt(overview.extraBudgetTotal)} />
-        <Row label="已用 USD" value={fmt(overview.extraBudgetUsed)} />
-        <Row label="剩余 USD" value={fmt(overview.extraBudgetLeft)} big />
-        <p className="note">只被真实成交消耗，不随反弹或新高回补；用尽后回到基础月投。</p>
-      </Card>
-
-      {editingPrice !== undefined && (
-        <PriceSheet
-          symbol={editingPrice}
-          price={data.etfs.find(e => e.symbol === editingPrice)?.price}
-          date={data.etfs.find(e => e.symbol === editingPrice)?.priceDate}
-          onClose={() => setEditingPrice(undefined)}
-          onSave={(p, d) => {
-            setPrice(editingPrice, p, d)
-            setEditingPrice(undefined)
-          }}
-        />
-      )}
-    </>
-  )
+          <div className="amount"><div>{fmt(row.marketValue)}</div><div className={tone(row.unrealized)}>{signed(row.unrealized)}</div><div className={tone(row.returnRate)}>{row.cost ? signedPct(row.returnRate) : '—'}</div></div>
+        </div>)}
+      </div>}
+    </Card>
+    <details className="doc"><summary>累计与额外预算</summary>
+      <Row label="持仓成本 USD" value={fmt(overview.totals.cost)} />
+      <Row label="累计买入 USD" value={fmt(overview.totalBought)} />
+      <Row label="到账 USD（嘉信渠道）" value={fmt(overview.receivedUsd)} />
+      <Row label="税后分红 USD" value={fmt(overview.netDividends)} />
+      <Row label="已实现盈亏 USD" value={fmt(overview.realized)} />
+      <Row label="额外预算总额 / 已用" value={`${fmt(overview.extraBudgetTotal)} / ${fmt(overview.extraBudgetUsed)}`} />
+      <Row label="额外预算剩余 USD" value={fmt(overview.extraBudgetLeft)} />
+      <p className="note">到账仅统计嘉信渠道，不重复加总中转。额外预算只被真实定投成交消耗，不随反弹回补。</p>
+    </details>
+    {editingCash && <Sheet title="核对券商现金" onClose={() => setEditingCash(false)}>
+      <Field label="券商实际现金余额 USD"><NumberInput value={cashInput} onChange={setCashInput} /></Field>
+      <p className="note">按券商实际余额填写，不会自动根据流水推算。</p>
+      <div className="btn-row"><button className="primary" disabled={cashInput === undefined || cashInput < 0} onClick={() => {
+        update(c => ({ ...c, settings: { ...c.settings, cashUsd: cashInput, cashCheckedAt: new Date().toISOString() } }))
+        setEditingCash(false)
+      }}>保存现金</button><button onClick={() => setEditingCash(false)}>取消</button></div>
+    </Sheet>}
+    {editingPrice !== undefined && <PriceSheet symbol={editingPrice} price={data.etfs.find(e => e.symbol === editingPrice)?.price} date={data.etfs.find(e => e.symbol === editingPrice)?.priceDate}
+      onClose={() => setEditingPrice(undefined)} onSave={(price, date) => {
+        update(c => ({ ...c, etfs: c.etfs.some(e => e.symbol === editingPrice)
+          ? c.etfs.map(e => e.symbol === editingPrice ? { ...e, price: price ?? 0, priceDate: date } : e)
+          : [...c.etfs, { symbol: editingPrice, price: price ?? 0, priceDate: date, targetRatio: 0, planned: false }] }))
+        setEditingPrice(undefined)
+      }} />}
+  </>
 }
 
-function PriceSheet({
-  symbol,
-  price,
-  date,
-  onClose,
-  onSave
-}: {
-  symbol: string
-  price: number | undefined
-  date: string | undefined
-  onClose: () => void
+function PriceSheet({ symbol, price, date, onClose, onSave }: {
+  symbol: string; price?: number; date?: string; onClose: () => void
   onSave: (price: number | undefined, date: string | undefined) => void
 }) {
   const [p, setP] = useState<number | undefined>(price || undefined)
-  const [d, setD] = useState<string | undefined>(date || today())
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
-        <h2>{symbol} 现价</h2>
-        <Field label="现价 USD／份">
-          <NumberInput value={p} onChange={setP} placeholder="0.00" />
-        </Field>
-        <Field label="价格日期" sub="也可以直接用顶部「更新行情」自动填。">
-          <input type="date" value={d ?? ''} onChange={e => setD(e.target.value || undefined)} />
-        </Field>
-        <div className="btn-row">
-          <button className="primary" onClick={() => onSave(p, d)}>
-            保存
-          </button>
-          <button onClick={onClose}>取消</button>
-        </div>
-      </div>
-    </div>
-  )
+  const [d, setD] = useState(date || today())
+  return <Sheet title={`${symbol} 价格`} onClose={onClose}>
+    <Field label="价格 USD／份"><NumberInput value={p} onChange={setP} placeholder="0.00" /></Field>
+    <Field label="价格日期"><input type="date" value={d} onChange={e => setD(e.target.value)} /></Field>
+    <div className="btn-row"><button className="primary" disabled={p === undefined || p <= 0 || !d} onClick={() => onSave(p, d)}>保存价格</button><button onClick={onClose}>取消</button></div>
+  </Sheet>
 }

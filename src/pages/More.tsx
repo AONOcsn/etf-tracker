@@ -1,19 +1,17 @@
-import { useMemo, useRef, useState } from 'react'
-import { Card, Checkbox, Field, NumberInput, Row, TextInput } from '../components/ui.tsx'
+import { useRef, useState } from 'react'
+import { Card, Field, NumberInput, Row, TextInput } from '../components/ui.tsx'
 import type { AppData, EtfSetting } from '../core/types.ts'
-import { CAPACITY, num } from '../core/types.ts'
+import { validateBackup } from '../core/backup.ts'
 import { accountsOf, currenciesOf } from '../core/empty.ts'
-import { computeHoldings } from '../core/holdings.ts'
-import { computeBatches, computeDividends, computeFx, computeTransfers, computeWithdrawals } from '../core/funds.ts'
-import { computeDrawdown } from '../core/drawdown.ts'
-import { capacityWarnings, collectIssues } from '../core/checks.ts'
 import { toCsvWithBom, money, shares as fmtShares } from '../core/csv.ts'
+import { InvestmentSettings } from '../components/InvestmentSettings.tsx'
+import { Icon } from '../components/Icon.tsx'
 import { QUOTE_SYMBOL } from '../core/quotes.ts'
 
 declare const __BUILD_STAMP__: string
 
 /**
- * 「更多」页：设置、行情、备份、问题排查与使用说明。
+ * 「设置」页：设置、行情、备份、问题排查与使用说明。
  *
  * 集中放在这里而不是散进各页，是为了让日常录入的三页保持干净。
  */
@@ -26,8 +24,10 @@ export function MorePage({
   resetAll,
   refreshQuotes,
   quoting,
-  quoteMessage
+  quoteMessage,
+  initialSection
 }: {
+  initialSection?: string
   data: AppData
   update: (fn: (d: AppData) => AppData) => void
   importData: (incoming: unknown) => Promise<AppData>
@@ -39,36 +39,23 @@ export function MorePage({
   quoteMessage: { kind: 'ok' | 'err'; text: string } | undefined
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [confirmImport, setConfirmImport] = useState<unknown>(undefined)
+  const [confirmImport, setConfirmImport] = useState<AppData | undefined>(undefined)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmRollback, setConfirmRollback] = useState<string>()
   const [newSymbol, setNewSymbol] = useState('')
   const [importMessage, setImportMessage] = useState<string | undefined>(undefined)
 
-  const holdings = useMemo(() => computeHoldings(data.trades), [data.trades])
-  const issues = useMemo(
-    () =>
-      collectIssues({
-        holdings,
-        fx: computeFx(data.fxRecords),
-        transfers: computeTransfers(data.transfers),
-        withdrawals: computeWithdrawals(data.withdrawals),
-        batches: computeBatches(data.batches),
-        dividends: computeDividends(data.dividends),
-        planStatuses: computeDrawdown({
-          months: data.planMonths,
-          settings: data.settings,
-          trades: data.trades
-        }).rows.map(r => ({ period: r.period, status: r.status }))
-      }),
-    [data, holdings]
-  )
-  const warnings = capacityWarnings(data)
+  const [section, setSection] = useState(initialSection ?? 'main')
 
   function patchEtf(symbol: string, patch: Partial<EtfSetting>) {
     update(c => ({ ...c, etfs: c.etfs.map(e => (e.symbol === symbol ? { ...e, ...patch } : e)) }))
   }
 
   function removeEtf(symbol: string) {
+    if (data.trades.some(t => t.symbol === symbol) || data.dividends.some(d => d.symbol === symbol) || (data.etfs.find(e => e.symbol === symbol)?.cash ?? 0) !== 0) {
+      setImportMessage(`${symbol} 仍有关联记录或现金，请保留它以免遗漏资产。`)
+      return
+    }
     update(c => ({ ...c, etfs: c.etfs.filter(e => e.symbol !== symbol) }))
   }
 
@@ -110,119 +97,29 @@ export function MorePage({
     setImportMessage(undefined)
     try {
       const text = await file.text()
-      setConfirmImport(JSON.parse(text))
-    } catch {
-      setImportMessage('这个文件不是合法的 JSON 备份，请确认是从本应用导出的文件。')
+      setConfirmImport(validateBackup(JSON.parse(text)))
+    } catch (error) {
+      setConfirmImport(undefined)
+      setImportMessage(error instanceof SyntaxError ? '这个文件不是合法的 JSON 备份。' : error instanceof Error ? error.message : String(error))
     }
   }
 
-  return (
-    <>
-      <Card title="行情" hint={data.settings.lastQuoteAt ? `上次 ${data.settings.lastQuoteAt.slice(0, 16).replace('T', ' ')}` : '未更新'}>
-        <div className="btn-row" style={{ marginTop: 0 }}>
-          <button className="primary" onClick={() => void refreshQuotes()} disabled={quoting}>
-            {quoting ? (
-              <>
-                <span className="spin" /> 正在更新
-              </>
-            ) : (
-              '更新行情'
-            )}
-          </button>
-        </div>
-        {quoteMessage && <div className={`banner ${quoteMessage.kind}`}>{quoteMessage.text}</div>}
-        <p className="note">
-          数据源是腾讯的公开行情接口（实时快照 + 日线）。它会更新各 ETF 的现价与价格日期，并把最近已结束交易日的标普500收盘填进回撤计划的本月。
-          请求只发送要查的代码（{Object.keys(QUOTE_SYMBOL).join('、')}），<strong>不会上传任何持仓、金额或账户信息</strong>。
-          不点这个按钮就完全不联网。
-        </p>
-      </Card>
-
-      {issues.length > 0 && (
-        <Card title="待处理" hint={`${issues.length} 项`}>
-          <div className="list">
-            {issues.map(issue => (
-              <div className="item" key={issue.id}>
-                <div className="main">
-                  <div className="title">
-                    <span className={`badge ${issue.severity === 'warn' ? 'bad' : 'warn'}`}>{issue.area}</span>
-                    {issue.where}
-                  </div>
-                  <div className="meta">{issue.message}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      <Card title="ETF 清单" hint="目标比例与现价">
-        {data.etfs.map(etf => (
-          <div key={etf.symbol} style={{ borderBottom: '1px dashed var(--line)', paddingBottom: 10, marginBottom: 10 }}>
-            <div className="row" style={{ border: 'none' }}>
-              <span className="k" style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14 }}>
-                {etf.symbol}
-              </span>
-              <button className="ghost" style={{ minHeight: 26, padding: '0 8px', fontSize: 12 }} onClick={() => removeEtf(etf.symbol)}>
-                移除
-              </button>
-            </div>
-            <div className="grid3">
-              <Field label="目标比例">
-                <NumberInput value={etf.targetRatio} onChange={v => patchEtf(etf.symbol, { targetRatio: v ?? 0 })} />
-              </Field>
-              <Field label="现价 USD">
-                <NumberInput value={etf.price || undefined} onChange={v => patchEtf(etf.symbol, { price: v ?? 0 })} />
-              </Field>
-              <Field label="价格日期">
-                <input
-                  type="date"
-                  value={etf.priceDate ?? ''}
-                  onChange={e => patchEtf(etf.symbol, { priceDate: e.target.value || undefined })}
-                />
-              </Field>
-            </div>
-            <Checkbox
-              label="纳入新投入的计划分配"
-              checked={etf.planned}
-              onChange={v => patchEtf(etf.symbol, { planned: v })}
-            />
-          </div>
-        ))}
-        <div className="grid2" style={{ marginTop: 10 }}>
-          <Field label="新增 ETF 代码">
-            <TextInput value={newSymbol} onChange={setNewSymbol} placeholder="如 ARKK" />
-          </Field>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button onClick={addEtf} style={{ width: '100%' }}>
-              添加
-            </button>
-          </div>
-        </div>
-        <p className="note">目标比例只影响月度计划的分配金额，不会自动下单。</p>
-      </Card>
-
-      <Card title="账户清单" hint="资金页的下拉选项">
-        <ListEditor
-          items={accountsOf(data.settings)}
-          placeholder="如：招商银行 / 盈透证券"
-          onChange={list => update(c => ({ ...c, settings: { ...c.settings, accounts: list } }))}
-        />
-        <p className="note">
-          改名不会自动更新已有记录——历史记录里用的还是旧名称（下拉里会标注「已不在清单」）。要一并改的话，
-          在资金页把那几笔重新选一次即可。
-        </p>
-      </Card>
-
-      <Card title="币种清单" hint="资金页的下拉选项">
-        <ListEditor
-          items={currenciesOf(data.settings)}
-          placeholder="如：RMB / HKD / USD / JPY"
-          onChange={list => update(c => ({ ...c, settings: { ...c.settings, currencies: list } }))}
-        />
-        <p className="note">建议用常见的三字母代码，方便和银行流水对照。</p>
-      </Card>
-
+  const sections = [
+    { key: 'strategy', title: '投资参数', sub: '月投金额、回撤预算与投入比例' },
+    { key: 'symbols', title: '标的管理', sub: '持仓目标、价格与标的清单' },
+    { key: 'accounts', title: '账户与币种', sub: '管理资金划转的常用选项' },
+    { key: 'data', title: '数据与备份', sub: '导出、恢复点与本机数据' },
+    { key: 'help', title: '帮助', sub: '操作说明与计算口径' }
+  ]
+  if (section === 'main') return <>
+    <div className="settings-group">{sections.map(item => <button key={item.key} className="setting-link" onClick={() => setSection(item.key)}><span><strong>{item.title}</strong><small>{item.sub}</small></span><Icon name="chevron" /></button>)}</div>
+    <p className="privacy-note">账本保存在这台设备上。换机或清理网站数据前，请先导出 JSON 备份。</p>
+    <p className="build-note">版本 {__BUILD_STAMP__}</p>
+  </>
+  return <>
+    <button className="text-button back-button" onClick={() => setSection('main')}>‹ 返回设置</button>
+    {section === 'strategy' && <InvestmentSettings data={data} update={update} />}
+    {section === 'data' && <>
       <Card title="备份与恢复">
         <div className="btn-row" style={{ marginTop: 0 }}>
           <button onClick={exportJson}>导出 JSON 备份</button>
@@ -346,17 +243,21 @@ export function MorePage({
           </button>
         </div>
 
-        {importMessage && <div className="banner err">{importMessage}</div>}
+        {importMessage && <div className={`banner ${/完成/.test(importMessage) ? 'ok' : 'err'}`} role="status">{importMessage}</div>}
         {confirmImport !== undefined && (
           <div className="banner info">
-            即将导入这份备份并<strong>覆盖本机现有数据</strong>。
+            即将导入：{confirmImport.trades.length} 笔成交、{confirmImport.fxRecords.length} 笔换汇、{confirmImport.transfers.length} 笔入金、{confirmImport.withdrawals.length} 笔出金、{confirmImport.dividends.length} 笔分红。<br /><strong>将覆盖本机现有账本</strong>，覆盖前会保留独立恢复点。
             <div className="btn-row">
               <button
                 className="primary"
                 onClick={async () => {
-                  await importData(confirmImport)
-                  setConfirmImport(undefined)
-                  setImportMessage('导入完成。')
+                  try {
+                    await importData(confirmImport)
+                    setConfirmImport(undefined)
+                    setImportMessage('导入完成，原账本已保留为操作前恢复点。')
+                  } catch (error) {
+                    setImportMessage(error instanceof Error ? error.message : String(error))
+                  }
                 }}
               >
                 确认覆盖
@@ -366,22 +267,27 @@ export function MorePage({
           </div>
         )}
 
+        {confirmRollback && <div className="banner info">
+          回滚到所选恢复记录？当前账本会先保留为新的恢复点。
+          <div className="btn-row"><button className="primary" onClick={async () => {
+            try { await rollback(confirmRollback); setConfirmRollback(undefined); setImportMessage('回滚完成，回滚前账本已保留。') }
+            catch (error) { setImportMessage(error instanceof Error ? error.message : String(error)) }
+          }}>确认回滚</button><button onClick={() => setConfirmRollback(undefined)}>取消</button></div>
+        </div>}
         {snapshots.length > 0 && (
           <>
-            <div className="section-title">本机历史快照（最近 {snapshots.length} 份）</div>
+            <div className="section-title">本机恢复记录（{snapshots.length} 份）</div>
             <div className="list">
               {[...snapshots].reverse().map(s => (
                 <div className="item" key={s.label}>
                   <div className="main">
-                    <div className="title">{s.label}</div>
-                    <div className="meta">{s.at.slice(0, 16).replace('T', ' ')}</div>
+                    <div className="title">{s.label.startsWith('auto-') ? '每日快照' : s.label.split('-').slice(0, 2).join(' · ')}</div>
+                    <div className="meta">{new Date(s.at).toLocaleString('zh-CN', { hour12: false })}</div>
                   </div>
                   <button
                     className="ghost"
-                    style={{ minHeight: 32, padding: '2px 10px', fontSize: 12 }}
-                    onClick={async () => {
-                      if (confirm(`回滚到 ${s.label}？当前数据会被替换。`)) await rollback(s.label)
-                    }}
+                    style={{ padding: '2px 10px', fontSize: 14 }}
+                    onClick={() => setConfirmRollback(s.label)}
                   >
                     回滚
                   </button>
@@ -396,14 +302,140 @@ export function MorePage({
         </p>
       </Card>
 
+      <Card title="关于">
+        <Row label="构建版本" value={<span className="mono">{__BUILD_STAMP__}</span>} />
+        <Row
+          label="数据条数"
+          value={`交易 ${data.trades.length} · 换汇 ${data.fxRecords.length} · 入金 ${data.transfers.length} · 出金 ${data.withdrawals.length} · 分红 ${data.dividends.length}`}
+        />
+        <p className="note">
+          如果手机上看起来还是旧版本，用 Safari（不是主屏幕图标）打开站点停留几秒，让它完成更新后再重新打开。
+          设置页这里的「构建版本」时间戳没变，就说明仍在用缓存的旧版本。
+        </p>
+        <div className="btn-row">
+          <button
+            className="danger"
+            onClick={() => {
+              setConfirmReset(true)
+            }}
+          >
+            清空本机数据
+          </button>
+        </div>
+        {confirmReset && (
+          <div className="banner err">
+            会清空当前账本，操作前会保留一份恢复点。建议先导出 JSON 到「文件」保存。
+            <div className="btn-row">
+              <button
+                className="primary"
+                onClick={async () => {
+                  try { await resetAll(); setConfirmReset(false) }
+                  catch (error) { setImportMessage(error instanceof Error ? error.message : String(error)) }
+                }}
+              >
+                确认清空
+              </button>
+              <button onClick={() => setConfirmReset(false)}>取消</button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </>}
+    {section === 'symbols' && <>
+      <Card title="ETF 清单" hint="持仓目标与价格">
+        {data.etfs.map(etf => (
+          <div key={etf.symbol} style={{ borderBottom: '1px solid var(--line)', paddingBottom: 10, marginBottom: 10 }}>
+            <div className="row" style={{ border: 'none' }}>
+              <span className="k" style={{ fontWeight: 600, color: 'var(--text)', fontSize: 14 }}>
+                {etf.symbol}
+              </span>
+              <button className="ghost" style={{ padding: '0 8px', fontSize: 14 }} onClick={() => removeEtf(etf.symbol)}>
+                移除
+              </button>
+            </div>
+            <div className="grid3">
+              <Field label="持仓目标 %">
+                <NumberInput value={etf.targetRatio * 100} onChange={v => patchEtf(etf.symbol, { targetRatio: Math.min(100, Math.max(0, v ?? 0)) / 100 })} />
+              </Field>
+              <Field label="现价 USD">
+                <NumberInput value={etf.price || undefined} onChange={v => patchEtf(etf.symbol, { price: v ?? 0 })} />
+              </Field>
+              <Field label="价格日期">
+                <input
+                  type="date"
+                  value={etf.priceDate ?? ''}
+                  onChange={e => patchEtf(etf.symbol, { priceDate: e.target.value || undefined })}
+                />
+              </Field>
+            </div>
+              </div>
+        ))}
+        <div className="grid2" style={{ marginTop: 10 }}>
+          <Field label="新增 ETF 代码">
+            <TextInput value={newSymbol} onChange={setNewSymbol} placeholder="如 ARKK" />
+          </Field>
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button onClick={addEtf} style={{ width: '100%' }}>
+              添加
+            </button>
+          </div>
+        </div>
+        <p className="note">持仓目标占比用于核对资产配置。本月新投入的分配在「投资参数」中单独设置，不会自动下单。</p>
+      </Card>
+
+      <Card title="行情" hint={data.settings.lastQuoteAt ? `上次 ${data.settings.lastQuoteAt.slice(0, 16).replace('T', ' ')}` : '未更新'}>
+        <div className="btn-row" style={{ marginTop: 0 }}>
+          <button className="primary" onClick={() => void refreshQuotes()} disabled={quoting}>
+            {quoting ? (
+              <>
+                <span className="spin" /> 正在更新
+              </>
+            ) : (
+              '更新行情'
+            )}
+          </button>
+        </div>
+        {quoteMessage && <div className={`banner ${quoteMessage.kind}`}>{quoteMessage.text}</div>}
+        <p className="note">
+          数据源是腾讯的公开行情接口（实时快照 + 日线）。它会更新各 ETF 的现价与价格日期，并把最近已结束交易日的标普500收盘填进回撤计划的本月。
+          请求只发送要查的代码（{Object.keys(QUOTE_SYMBOL).join('、')}），<strong>不会上传任何持仓、金额或账户信息</strong>。
+          不点这个按钮就完全不联网。
+        </p>
+      </Card>
+
+    </>}
+    {section === 'accounts' && <>
+      <Card title="账户清单" hint="资金表单的常用选项">
+        <ListEditor
+          items={accountsOf(data.settings)}
+          placeholder="如：招商银行 / 盈透证券"
+          onChange={list => update(c => ({ ...c, settings: { ...c.settings, accounts: list } }))}
+        />
+        <p className="note">
+          改名不会自动更新已有记录——历史记录里用的还是旧名称（下拉里会标注「已不在清单」）。要一并改的话，
+          在记录页编辑那几笔，重新选择账户即可。
+        </p>
+      </Card>
+
+      <Card title="币种清单" hint="资金表单的常用选项">
+        <ListEditor
+          items={currenciesOf(data.settings)}
+          placeholder="如：RMB / HKD / USD / JPY"
+          onChange={list => update(c => ({ ...c, settings: { ...c.settings, currencies: list } }))}
+        />
+        <p className="note">建议用常见的三字母代码，方便和银行流水对照。</p>
+      </Card>
+
+    </>}
+    {section === 'help' && <>
       <Card title="使用说明">
         <details className="doc">
           <summary>每月操作顺序</summary>
           <p>
             ① 交易前在「计划」页填最近已结束美股交易日的收盘日与标普500收盘，核对历史最高收盘；
-            ② 按计算结果安排换汇、转账，并在「资金」页逐笔记录；
-            ③ 成交后在「交易」页记录实际金额、手续费、份额；
-            ④ 在「总览」更新现价与现金，有分红则在「分红」页另记。
+            ② 按计算结果安排换汇、转账，通过「记一笔」逐笔记录；
+            ③ 成交后从计划直接记买入，填写实际金额、手续费、份额；
+            ④ 在「总览」更新现价与核对现金，有分红则通过「记一笔」另记。
             每月计划日遇休市顺延，不自动下单。
           </p>
         </details>
@@ -441,71 +473,17 @@ export function MorePage({
         <details className="doc">
           <summary>历史高点与信息来源</summary>
           <p>
-            起始历史高收盘填在「计划」页的参数里。每月可填截至观察日更新的历史最高收盘，该值只增不减。
+            起始历史高收盘填在「设置 → 投资参数」里。每月可填截至观察日更新的历史最高收盘，该值只增不减。
             当月收盘创新高也会自动更新；两次观察之间有新高但后来回落时，需要手工补填「新历史高收盘」。
             用 Yahoo ^GSPC Close 或同口径来源，不要用盘中高点、52 周高点或账户盈亏。
           </p>
         </details>
-        <details className="doc">
-          <summary>预留范围与容量</summary>
-          <p>
-            交易 {CAPACITY.trades} 笔、换汇／入金／分红各 {CAPACITY.fx} 笔、计划 {CAPACITY.months} 个月。
-            接近上限时本页会提醒。
-          </p>
-        </details>
-        {warnings.length > 0 && (
-          <div className="banner info">
-            {warnings.map(w => (
-              <div key={w}>{w}</div>
-            ))}
-          </div>
-        )}
+
       </Card>
 
-      <Card title="关于">
-        <Row label="构建版本" value={<span className="mono">{__BUILD_STAMP__}</span>} />
-        <Row
-          label="数据条数"
-          value={`交易 ${data.trades.length} · 换汇 ${data.fxRecords.length} · 入金 ${data.transfers.length} · 出金 ${data.withdrawals.length} · 分红 ${data.dividends.length}`}
-        />
-        <p className="note">
-          如果手机上看起来还是旧版本，用 Safari（不是主屏幕图标）打开站点停留几秒，让它完成更新后再重新打开。
-          设置页这里的「构建版本」时间戳没变，就说明仍在用缓存的旧版本。
-        </p>
-        <div className="btn-row">
-          <button
-            className="danger"
-            onClick={() => {
-              setConfirmReset(true)
-            }}
-          >
-            清空本机数据
-          </button>
-        </div>
-        {confirmReset && (
-          <div className="banner err">
-            会删除账本与全部历史快照，<strong>无法恢复</strong>。建议先导出 JSON 备份。
-            <div className="btn-row">
-              <button
-                className="primary"
-                onClick={async () => {
-                  await resetAll()
-                  setConfirmReset(false)
-                }}
-              >
-                确认清空
-              </button>
-              <button onClick={() => setConfirmReset(false)}>取消</button>
-            </div>
-          </div>
-        )}
-      </Card>
-    </>
-  )
-}
+    </>}
+  </>
 
-export function totalCash(data: AppData): number {
-  return data.etfs.reduce((s, e) => s + num(e.cash, 0), 0)
 }
 
 /**
@@ -556,16 +534,15 @@ function ListEditor({
           <div key={`${item}-${index}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
               type="text"
-              value={item}
-              onChange={e => rename(index, e.target.value)}
+              defaultValue={item}
               onBlur={e => {
                 // 空名字无意义，回落成原值需要外部支持，这里直接阻止清空
-                if (!e.target.value.trim()) rename(index, item)
+                rename(index, e.target.value.trim() || item)
               }}
             />
             <button
               className="ghost"
-              style={{ minHeight: 40, padding: '0 12px', flex: '0 0 auto' }}
+              style={{ padding: '0 12px', flex: '0 0 auto' }}
               onClick={() => remove(index)}
               disabled={items.length <= 1}
               aria-label="移除"

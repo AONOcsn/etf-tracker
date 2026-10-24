@@ -1,5 +1,6 @@
 import type { EtfSetting, Trade } from './types.ts'
 import { monthOf, num } from './types.ts'
+import { computeHoldings } from './holdings.ts'
 import type { PlanRow } from './drawdown.ts'
 
 /**
@@ -39,7 +40,7 @@ export interface MonthRow {
 export function computeMonthly(planRows: PlanRow[], etfs: EtfSetting[], trades: Trade[]): MonthRow[] {
   const plannedEtfs = etfs.filter(e => e.planned)
   const byMonth = new Map<string, Trade[]>()
-  for (const t of trades) {
+  for (const t of computeHoldings(trades).trades.filter(t => t.status === '已记录')) {
     const m = monthOf(t.date)
     if (!m) continue
     const list = byMonth.get(m)
@@ -50,7 +51,7 @@ export function computeMonthly(planRows: PlanRow[], etfs: EtfSetting[], trades: 
   return planRows.map(plan => {
     const monthTrades = byMonth.get(plan.period) ?? []
     const cells = plannedEtfs.map(etf => {
-      const planned = plan.monthTotal * num(etf.targetRatio, 0)
+      const planned = plan.monthTotal * num(etf.investRatio ?? etf.targetRatio, 0)
       const actual = monthTrades
         .filter(t =>
           t.side === 'buy' &&

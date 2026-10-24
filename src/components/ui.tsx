@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Children, cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import type { Purpose, Side } from '../core/types.ts'
 import { numericToText, parseNumericInput, sanitizeNumericInput } from '../core/numeric.ts'
 
@@ -34,10 +34,11 @@ export function Row({ label, value, big, tone }: { label: ReactNode; value: Reac
 }
 
 export function Field({ label, sub, children }: { label: ReactNode; sub?: ReactNode; children: ReactNode }) {
+  const id = useId()
   return (
     <div className="field">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={id}>{label}</label>
+      {Children.map(children, (child, index) => index === 0 && isValidElement(child) ? cloneElement(child as ReactElement<{ id?: string }>, { id }) : child)}
       {sub !== undefined && <div className="sub">{sub}</div>}
     </div>
   )
@@ -58,8 +59,10 @@ export function Field({ label, sub, children }: { label: ReactNode; sub?: ReactN
 export function NumberInput({
   value,
   onChange,
-  placeholder
+  placeholder,
+  id
 }: {
+  id?: string
   value: number | undefined
   onChange: (value: number | undefined) => void
   placeholder?: string
@@ -78,6 +81,7 @@ export function NumberInput({
 
   return (
     <input
+      id={id}
       type="text"
       inputMode="decimal"
       autoComplete="off"
@@ -104,12 +108,12 @@ export function NumberInput({
   )
 }
 
-export function TextInput({ value, onChange, placeholder }: { value: string | undefined; onChange: (value: string) => void; placeholder?: string }) {
-  return <input type="text" value={value ?? ''} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+export function TextInput({ value, onChange, placeholder, id }: { id?: string; value: string | undefined; onChange: (value: string) => void; placeholder?: string }) {
+  return <input id={id} type="text" value={value ?? ''} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
 }
 
-export function DateInput({ value, onChange }: { value: string | undefined; onChange: (value: string | undefined) => void }) {
-  return <input type="date" value={value ?? ''} onChange={e => onChange(e.target.value || undefined)} />
+export function DateInput({ value, onChange, id }: { id?: string; value: string | undefined; onChange: (value: string | undefined) => void }) {
+  return <input id={id} type="date" value={value ?? ''} onChange={e => onChange(e.target.value || undefined)} />
 }
 
 export function Select<T extends string>({
@@ -125,7 +129,7 @@ export function Select<T extends string>({
     <select value={value ?? ''} onChange={e => onChange(e.target.value as T)}>
       {options.map(o => (
         <option key={o} value={o}>
-          {o}
+          {o === 'buy' ? '买入' : o === 'sell' ? '卖出' : o}
         </option>
       ))}
     </select>
@@ -147,7 +151,7 @@ export function Checkbox({ label, checked, onChange }: { label: ReactNode; check
  * 待补、在途这类中间态用灰／黄；需要核对的错误用红。
  */
 export function StatusBadge({ status }: { status: string | undefined }) {
-  if (!status) return null
+  if (!status || ['已记录', '已计算', '已完整划转', '已按计划记录', '已记录预算金额', '无持仓'].includes(status)) return null
   const kind = statusKind(status)
   return <span className={`badge${kind === 'ok' ? '' : ` ${kind}`}`}>{status}</span>
 }
@@ -161,14 +165,26 @@ function statusKind(status: string): 'ok' | 'warn' | 'bad' | 'plain' {
 
 /** 底部弹出的编辑面板。 */
 export function Sheet({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
-        <h2>{title}</h2>
-        {children}
-      </div>
-    </div>
-  )
+  const root = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    root.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); close.current(); return }
+      if (event.key !== 'Tab') return
+      const controls = [...(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex="0"]') ?? [])].filter(el => el.offsetParent !== null)
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', keydown); if (previous?.isConnected) previous.focus() }
+  }, [])
+  return <div className="sheet-backdrop"><div ref={root} className="sheet" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}><div className="sheet-heading"><h2>{title}</h2><button className="ghost" onClick={onClose} aria-label="关闭编辑">关闭</button></div>{children}</div></div>
 }
 
 export function ConfirmBar({ message, onConfirm, onCancel, confirmText }: { message: ReactNode; onConfirm: () => void; onCancel: () => void; confirmText?: string }) {

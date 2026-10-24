@@ -1,5 +1,5 @@
 import type { AppData, EtfSetting, Settings } from './types.ts'
-import { DEFAULT_ACCOUNTS, DEFAULT_CURRENCIES, currentPeriod, periodRange } from './types.ts'
+import { DEFAULT_ACCOUNTS, DEFAULT_CURRENCIES, currentPeriod } from './types.ts'
 
 /**
  * 空白账本与默认参数。
@@ -37,14 +37,14 @@ export const DEFAULT_ETFS: EtfSetting[] = [
   { symbol: 'SMH', targetRatio: 0, planned: false, price: 0 }
 ]
 
-/** 空白账本。planMonths 预置 120 个月（原表预留范围），但全部留空。 */
+/** 新账本仅创建当前月份，历史记录按需加入。 */
 export function emptyData(startPeriod?: string): AppData {
   const first = startPeriod ?? currentPeriod()
   return {
     version: 1,
-    settings: { ...DEFAULT_SETTINGS },
-    etfs: DEFAULT_ETFS.map(e => ({ ...e })),
-    planMonths: periodRange(first, 120).map(period => ({ period })),
+    settings: { ...DEFAULT_SETTINGS, cashUsd: 0 },
+    etfs: DEFAULT_ETFS.map(e => ({ ...e, investRatio: e.planned ? e.targetRatio : 0 })),
+    planMonths: [{ period: first }],
     trades: [],
     fxRecords: [],
     transfers: [],
@@ -87,11 +87,14 @@ export function normalizeData(raw: unknown): AppData {
           symbol: e.symbol,
           targetRatio: finite(e.targetRatio, 0),
           planned: Boolean(e.planned),
+          investRatio: finite(e.investRatio, e.planned ? finite(e.targetRatio, 0) : 0),
           price: finite(e.price, 0),
           priceDate: typeof e.priceDate === 'string' ? e.priceDate : undefined,
-          cash: e.cash === undefined ? undefined : finite(e.cash, 0)
+          cash: undefined
         }))
     : base.etfs.map(e => ({ ...e }))
+
+  settings.cashUsd = opt(input.settings?.cashUsd) ?? (Array.isArray(input.etfs) ? input.etfs.reduce((n, e) => n + finite(e?.cash, 0), 0) : 0)
 
   const planMonths = Array.isArray(input.planMonths) && input.planMonths.length
     ? input.planMonths

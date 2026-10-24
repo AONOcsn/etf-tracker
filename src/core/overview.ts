@@ -21,14 +21,14 @@ export interface EtfRow {
   shares: number
   cost: number
   avgCost: number
-  marketValue: number
-  unrealized: number
+  marketValue: number | undefined
+  unrealized: number | undefined
   /** 持仓收益率。 */
-  returnRate: number
+  returnRate: number | undefined
   /** 市值占比。 */
-  weight: number
+  weight: number | undefined
   /** 偏离目标 = 市值占比 − 目标比例（原表 M 列）。 */
-  deviation: number
+  deviation: number | undefined
   /** 状态（原表 N 列）。 */
   status: string
 }
@@ -41,14 +41,14 @@ export interface OverviewResult {
     targetRatio: number
     basePlan: number
     cost: number
-    marketValue: number
-    unrealized: number
-    returnRate: number
+    marketValue: number | undefined
+    unrealized: number | undefined
+    returnRate: number | undefined
   }
   /** 现金 USD（手动填）。 */
   cash: number
   /** 总值 = ETF 市值 + 现金。 */
-  totalValue: number
+  totalValue: number | undefined
   /** 累计买入（不含手续费）。 */
   totalBought: number
   /** 累计已实现盈亏。 */
@@ -111,12 +111,15 @@ export function computeOverview(params: {
     if (t.symbol && t.status !== '已记录') incompleteBySymbol[t.symbol] = (incompleteBySymbol[t.symbol] ?? 0) + 1
   }
 
-  const rows: EtfRow[] = etfs.map(etf => {
+  const configured = new Set(etfs.map(e => e.symbol))
+  const allEtfs: EtfSetting[] = [...etfs, ...Object.values(holdings.bySymbol)
+    .filter(h => h.shares > 0 && !configured.has(h.symbol))
+    .map(h => ({ symbol: h.symbol, price: 0, targetRatio: 0, planned: false }))]
+  const rows: EtfRow[] = allEtfs.map(etf => {
     const h = holdingOf(holdings, etf.symbol)
     const price = num(etf.price, 0)
-    // 没有现价时市值为 0；界面靠 status === '等待现价' 提示，不在这里编造价格。
-    const marketValue = h.shares * price
-    const unrealized = marketValue - h.cost
+    const marketValue = h.shares === 0 ? 0 : price > 0 ? h.shares * price : undefined
+    const unrealized = marketValue === undefined ? undefined : marketValue - h.cost
     return {
       symbol: etf.symbol,
       targetRatio: num(etf.targetRatio, 0),
@@ -128,7 +131,7 @@ export function computeOverview(params: {
       avgCost: h.avgCost,
       marketValue,
       unrealized,
-      returnRate: h.cost === 0 ? 0 : unrealized / h.cost,
+      returnRate: unrealized === undefined ? undefined : h.cost === 0 ? 0 : unrealized / h.cost,
       weight: 0,
       deviation: 0,
       status: etfStatus({
@@ -141,16 +144,17 @@ export function computeOverview(params: {
     }
   })
 
-  const totalMarketValue = rows.reduce((s, r) => s + r.marketValue, 0)
+  const totalMarketValue = rows.some(r => r.marketValue === undefined)
+    ? undefined : rows.reduce((s, r) => s + (r.marketValue ?? 0), 0)
   const totalCost = rows.reduce((s, r) => s + r.cost, 0)
-  const totalUnrealized = totalMarketValue - totalCost
+  const totalUnrealized = totalMarketValue === undefined ? undefined : totalMarketValue - totalCost
   const totalBought = Object.values(holdings.bySymbol).reduce((s, h) => s + h.bought, 0)
   const realized = Object.values(holdings.bySymbol).reduce((s, h) => s + h.realized, 0)
 
   for (const row of rows) {
     // 原表 L 列在合计市值为 0 或空时整体留空，这里用 0 表达同一含义。
-    row.weight = totalMarketValue === 0 ? 0 : row.marketValue / totalMarketValue
-    row.deviation = row.weight - row.targetRatio
+    row.weight = !totalMarketValue || row.marketValue === undefined ? undefined : row.marketValue / totalMarketValue
+    row.deviation = row.weight === undefined ? undefined : row.weight - row.targetRatio
   }
 
   return {
@@ -162,10 +166,10 @@ export function computeOverview(params: {
       cost: totalCost,
       marketValue: totalMarketValue,
       unrealized: totalUnrealized,
-      returnRate: totalCost === 0 ? 0 : totalUnrealized / totalCost
+      returnRate: totalUnrealized === undefined ? undefined : totalCost === 0 ? 0 : totalUnrealized / totalCost
     },
     cash: num(cash, 0),
-    totalValue: totalMarketValue + num(cash, 0),
+    totalValue: totalMarketValue === undefined ? undefined : totalMarketValue + num(cash, 0),
     totalBought,
     realized,
     receivedUsd,

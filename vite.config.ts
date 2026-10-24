@@ -29,8 +29,8 @@ export default defineConfig({
         scope: './',
         display: 'standalone',
         orientation: 'portrait',
-        background_color: '#f6f7f4',
-        theme_color: '#f6f7f4',
+        background_color: '#f2f2f7',
+        theme_color: '#f2f2f7',
         icons: [{ src: './icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }]
       },
       workbox: {

@@ -1,200 +1,55 @@
 import { useMemo, useState } from 'react'
-import { Card, Empty, Field, NumberInput, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
+import { Card, Field, NumberInput, Row, Sheet, StatusBadge, TextInput } from '../components/ui.tsx'
 import { MarketClock } from '../components/MarketClock.tsx'
 import type { AppData, PlanMonth } from '../core/types.ts'
 import { currentPeriod, today } from '../core/types.ts'
-import { computeDrawdown, visiblePlanRows } from '../core/drawdown.ts'
-import { computeMonthly } from '../core/monthly.ts'
+import { planning } from '../core/planning.ts'
+import { validDate } from '../core/ledger.ts'
+import type { RecordRequest } from '../core/ledger.ts'
 
-/**
- * 计划页：把原表的「回撤计划」与「月度计划」合并。
- *
- * 这两张表在原表里是上下联动的（月度计划引用回撤计划的本月合计），
- * 手机上一屏内并排看反而更清楚，所以合成一个页面。
- */
-export function PlanPage({ data, update }: { data: AppData; update: (fn: (d: AppData) => AppData) => void }) {
-  const [editing, setEditing] = useState<string | undefined>(undefined)
-  const [showParams, setShowParams] = useState(false)
-
-  const drawdown = useMemo(
-    () => computeDrawdown({ months: data.planMonths, settings: data.settings, trades: data.trades }),
-    [data.planMonths, data.settings, data.trades]
-  )
-  const monthly = useMemo(() => computeMonthly(drawdown.rows, data.etfs, data.trades), [drawdown.rows, data.etfs, data.trades])
-  // 只列出有内容的月份 + 当前月及之后两个月，避免 120 个空行铺满屏幕
-  const visibleRows = useMemo(
-    () => visiblePlanRows(data.planMonths, drawdown.rows),
-    [data.planMonths, drawdown.rows]
-  )
-
-  const period = currentPeriod()
-  const current = drawdown.rows.find(r => r.period === period)
-  const currentMonthly = monthly.find(m => m.period === period)
+export function PlanPage({ data, update, onRecord, onSettings }: {
+  data: AppData; update: (fn: (d: AppData) => AppData) => void
+  onRecord: (request: RecordRequest) => void; onSettings: () => void
+}) {
+  const [period, setPeriod] = useState(currentPeriod())
+  const [editing, setEditing] = useState(false)
+  const { drawdown, current, execution } = useMemo(() => planning(data, period), [data, period])
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const pct = (n: number) => `${(n * 100).toFixed(2)}%`
-
-  function patchMonth(period: string, patch: Partial<PlanMonth>) {
-    update(current => {
-      const exists = current.planMonths.some(m => m.period === period)
-      return {
-        ...current,
-        planMonths: exists
-          ? current.planMonths.map(m => (m.period === period ? { ...m, ...patch } : m))
-          : [...current.planMonths, { period, ...patch }].sort((a, b) => (a.period < b.period ? -1 : 1))
-      }
-    })
-  }
-
-  return (
-    <>
-      <Card
-        title="回撤计划参数"
-        hint={
-          <button className="ghost" style={{ minHeight: 28, padding: '2px 8px', fontSize: 12 }} onClick={() => setShowParams(v => !v)}>
-            {showParams ? '收起' : '修改'}
-          </button>
-        }
-      >
-        <Row label="基础月投 USD" value={fmt(data.settings.baseMonthly)} />
-        <Row label="额外预算总额 USD" value={fmt(data.settings.extraBudgetTotal)} />
-        <Row label="起始历史高收盘" value={fmt(data.settings.startingPeak)} />
-        <Row label="每月计划日" value={`${data.settings.planDay} 日`} />
-        <Row label="目标调仓" value={`VOO ${pct(1 - data.settings.rebalance)} ／ QQQM ${pct(data.settings.rebalance)}`} />
-        <Row label="额外预算剩余 USD" value={fmt(drawdown.budgetLeft)} big />
-        {showParams && (
-          <div style={{ marginTop: 12 }}>
-            <div className="grid2">
-              <Field label="基础月投 USD">
-                <NumberInput
-                  value={data.settings.baseMonthly}
-                  onChange={v =>
-                    update(c => ({ ...c, settings: { ...c.settings, baseMonthly: v ?? 0 } }))
-                  }
-                />
-              </Field>
-              <Field label="额外预算总额 USD">
-                <NumberInput
-                  value={data.settings.extraBudgetTotal}
-                  onChange={v => update(c => ({ ...c, settings: { ...c.settings, extraBudgetTotal: v ?? 0 } }))}
-                />
-              </Field>
-              <Field label="起始历史高收盘">
-                <NumberInput
-                  value={data.settings.startingPeak}
-                  onChange={v => update(c => ({ ...c, settings: { ...c.settings, startingPeak: v ?? 0 } }))}
-                />
-              </Field>
-              <Field label="每月计划日">
-                <NumberInput
-                  value={data.settings.planDay}
-                  onChange={v => update(c => ({ ...c, settings: { ...c.settings, planDay: Math.round(v ?? 1) } }))}
-                />
-              </Field>
-              <Field label="QQQM 目标比例" sub="VOO 自动取 1 − 该值">
-                <NumberInput
-                  value={data.settings.rebalance}
-                  onChange={v => update(c => ({ ...c, settings: { ...c.settings, rebalance: v ?? 0 } }))}
-                />
-              </Field>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      <MarketClock />
-
-      {current && (
-        <Card title="本月计划" hint={current.period}>
-          <Row label="计划日期" value={current.plannedDate} />
-          <Row label="观察收盘日" value={current.observedDate ?? '未填'} />
-          <Row label="标普500收盘" value={current.spClose !== undefined ? fmt(current.spClose) : '未填'} />
-          <Row label="沿用历史高点" value={fmt(current.peak)} />
-          <Row label="回撤幅度" value={current.drawdown !== undefined ? pct(current.drawdown) : '待补行情'} />
-          <Row label="档位总额 USD" value={current.tierAmount !== undefined ? fmt(current.tierAmount) : '—'} />
-          <Row label="计划额外 USD" value={fmt(current.plannedExtra)} />
-          <Row label="本月合计 USD" value={fmt(current.monthTotal)} big />
-          <Row label="VOO 计划 USD" value={fmt(current.vooPlan)} />
-          <Row label="QQQM 计划 USD" value={fmt(current.qqqmPlan)} />
-          <Row label="实际定投 USD" value={fmt(current.actualInvested)} />
-          <Row label="已用额外 USD" value={fmt(current.extraUsed)} />
-          <Row label="月底余款 USD" value={fmt(current.budgetAtEnd)} />
-          <Row label="状态" value={<StatusBadge status={current.status} />} />
-          <div className="btn-row">
-            <button className="primary" onClick={() => setEditing(current.period)}>
-              填本月行情
-            </button>
-          </div>
-          {currentMonthly && (
-            <>
-              <div className="section-title">月度执行</div>
-              {currentMonthly.etfs.map(e => (
-                <Row key={e.symbol} label={`${e.symbol} 计划 / 实际`} value={`${fmt(e.planned)} / ${fmt(e.actual)}`} />
-              ))}
-              <Row label="实际合计" value={fmt(currentMonthly.actualTotal)} />
-              <Row label="实际 − 预算" value={currentMonthly.diff !== undefined ? fmt(currentMonthly.diff) : '—'} />
-              <Row label="执行状态" value={<StatusBadge status={currentMonthly.status} />} />
-            </>
-          )}
-        </Card>
-      )}
-
-      <Card
-        title="历史与后续月份"
-        hint={visibleRows.length < drawdown.rows.length ? `${visibleRows.length} 个月有内容` : `${drawdown.rows.length} 个月`}
-      >
-        {visibleRows.length === 0 ? (
-          <Empty text="还没有填过行情的月份" />
-        ) : (
-          <div className="list">
-            {visibleRows.map(row => (
-              <div className="item" key={row.period}>
-                <div className="main">
-                  <div className="title">
-                    {row.period}
-                    <StatusBadge status={row.status} />
-                  </div>
-                  <div className="meta">
-                    收盘 {row.spClose !== undefined ? fmt(row.spClose) : '—'} · 高点 {fmt(row.peak)} · 回撤{' '}
-                    {row.drawdown !== undefined ? pct(row.drawdown) : '—'}
-                  </div>
-                  <div className="meta">
-                    合计 {fmt(row.monthTotal)} · 实际 {fmt(row.actualInvested)} · 已用 {fmt(row.extraUsed)} · 余款{' '}
-                    {fmt(row.budgetAtEnd)}
-                  </div>
-                </div>
-                <button className="edit" onClick={() => setEditing(row.period)} aria-label="编辑">
-                  ✎
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="note">只列出填过行情的月份，以及当前月和之后两个月。其余月份可以点上面的「本月计划」或按需要编辑。</p>
-      </Card>
-
-      {editing && (
-        <MonthSheet
-          row={data.planMonths.find(m => m.period === editing) ?? { period: editing }}
-          computed={drawdown.rows.find(r => r.period === editing)}
-          onClose={() => setEditing(undefined)}
-          onSave={patch => {
-            patchMonth(editing, patch)
-            setEditing(undefined)
-          }}
-        />
-      )}
-    </>
-  )
+  const ratio = data.etfs.filter(e => e.planned).reduce((n, e) => n + (e.investRatio ?? 0), 0)
+  const history = data.planMonths.filter(m => m.spClose !== undefined || m.newPeak !== undefined || m.observedDate || m.note || m.actualExtraOverride !== undefined || data.trades.some(t => t.date.startsWith(m.period))).map(m => m.period)
+  return <>
+    <div className="month-picker"><label htmlFor="plan-month">计划月份</label><input id="plan-month" type="month" value={period} onChange={e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setPeriod(e.target.value) }} /></div>
+    <Card title={period === currentPeriod() ? '本月计划' : '月度计划'} hint={period}>
+      <div className="plan-total"><span>计划投入 USD</span><strong>{fmt(current.monthTotal)}</strong></div>
+      <div className="plan-progress"><div style={{ width: `${Math.min(100, execution.actualTotal / Math.max(1, current.monthTotal) * 100)}%` }} /></div>
+      <div className="progress-caption"><span>已记录 {fmt(execution.actualTotal)}</span><span>还差 {fmt(Math.max(0, current.monthTotal - execution.actualTotal))}</span></div>
+      {!current.observedDate && <button className="inline-notice" onClick={() => setEditing(true)}>本月指数行情待补，当前先列基础月投。点击填写 ›</button>}
+      {Math.abs(ratio - 1) > 0.0001 && <button className="inline-notice" onClick={onSettings}>投入比例合计不是 100%，请到设置核对 ›</button>}
+      <div className="plan-allocations">{execution.etfs.map(e => <div className="plan-allocation" key={e.symbol}><div><strong>{e.symbol}</strong><small>计划 {fmt(e.planned)} · 已投 {fmt(e.actual)}</small></div><button className="primary" onClick={() => onRecord({ kind: 'buy', symbol: e.symbol, date: period === currentPeriod() ? today() : current.plannedDate, referenceAmount: Math.max(0, e.planned - e.actual) })}>记买入</button></div>)}</div>
+      <details className="calculation-details"><summary>回撤与预算依据</summary>
+        <Row label="计划日期" value={current.plannedDate} /><Row label="观察收盘日" value={current.observedDate ?? '待补'} /><Row label="指数收盘" value={current.spClose ? fmt(current.spClose) : '—'} /><Row label="沿用历史高点" value={fmt(current.peak)} /><Row label="回撤" value={current.drawdown === undefined ? '—' : `${(current.drawdown * 100).toFixed(2)}%`} /><Row label="基础 / 额外投入" value={`${fmt(data.settings.baseMonthly)} / ${fmt(current.plannedExtra)}`} /><Row label="月初额外预算" value={fmt(current.budgetAtStart)} /><Row label="已用额外预算" value={fmt(current.extraUsed)} /><Row label="月末额外预算" value={fmt(current.budgetAtEnd)} /><StatusBadge status={current.status} />
+      </details>
+      <button className="text-button full-width" onClick={() => setEditing(true)}>填写或核对观察行情</button>
+    </Card>
+    <div className="settings-group"><button className="setting-link" onClick={onSettings}><span><strong>投资参数</strong><small>基础月投 {fmt(data.settings.baseMonthly)} USD · 额外预算余 {fmt(drawdown.budgetLeft)}</small></span><span>›</span></button></div>
+    <details className="doc"><summary>美股交易时段</summary><MarketClock /></details>
+    {history.length > 0 && <details className="doc"><summary>已记录的计划月份</summary><div className="month-options">{[...new Set(history)].sort().reverse().map(p => <button key={p} onClick={() => setPeriod(p)}>{p}</button>)}</div></details>}
+    <p className="privacy-note">按实际成交核对进度。计划金额仅供参考，不会自动下单。</p>
+    {editing && <MonthSheet row={data.planMonths.find(m => m.period === period) ?? { period }} data={data} onClose={() => setEditing(false)} onSave={patch => {
+      update(c => ({ ...c, planMonths: c.planMonths.some(m => m.period === period) ? c.planMonths.map(m => m.period === period ? { ...m, ...patch } : m) : [...c.planMonths, { period, ...patch }] }))
+      setEditing(false)
+    }} />}
+  </>
 }
 
 function MonthSheet({
   row,
-  computed,
+  data,
   onClose,
   onSave
 }: {
   row: PlanMonth
-  computed?: { peak: number; drawdown?: number; tierAmount?: number; monthTotal: number }
+  data: AppData
   onClose: () => void
   onSave: (patch: Partial<PlanMonth>) => void
 }) {
@@ -205,6 +60,10 @@ function MonthSheet({
   const [overrideOn, setOverrideOn] = useState(row.actualExtraOverride !== undefined)
   const [note, setNote] = useState(row.note ?? '')
 
+  const patch = { observedDate, spClose, newPeak, actualExtraOverride: overrideOn ? override : undefined, note: note || undefined }
+  const months = data.planMonths.some(m => m.period === row.period) ? data.planMonths.map(m => m.period === row.period ? { ...m, ...patch } : m) : [...data.planMonths, { period: row.period, ...patch }]
+  const computed = planning({ ...data, planMonths: months }, row.period).current
+  const valid = validDate(observedDate) && spClose !== undefined && Number.isFinite(spClose) && spClose > 0 && (newPeak === undefined || newPeak > 0) && (!overrideOn || (override !== undefined && override >= 0))
   return (
     <Sheet title={`${row.period} 行情与额外投入`} onClose={onClose}>
       <Field label="观察收盘日" sub="填最近已结束的美股交易日，不是今天。">
@@ -243,6 +102,7 @@ function MonthSheet({
       <div className="btn-row">
         <button
           className="primary"
+          disabled={!valid}
           onClick={() =>
             onSave({
               observedDate,
